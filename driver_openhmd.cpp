@@ -172,11 +172,19 @@ public:
     int device_flags;
     DriverPose_t pose;
 
+    bool m_is_oculus;
+
     COpenHMDDeviceDriverController(int index, ohmd_device* _device, int _device_idx) :
 		index(index), device(_device), device_idx(_device_idx) {
         DriverLog("construct controller object %d (OpenHMD device %d)\n", index, device_idx);
         m_unObjectId = vr::k_unTrackedDeviceIndexInvalid;
         pose = { 0 };
+
+
+        if (strcmp(ohmd_list_gets(ctx, device_idx, OHMD_VENDOR), "Oculus VR, Inc.") == 0) {
+            m_is_oculus = true;
+            DriverLog("detected oculus controllers, using oculus input profile");
+        }
     }
     virtual ~COpenHMDDeviceDriverController() {}
 
@@ -197,9 +205,25 @@ public:
 
         vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_ModelNumber_String, controllerModel);
         //vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_RenderModelName_String, controllerModel);
-        vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_RenderModelName_String, "vr_tracker_vive_1_0");
 	//vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_ModelNumber_String, "1" );
-        vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_ControllerType_String, "openhmd_controller" );
+        if (m_is_oculus) {
+            // steamapps/common/SteamVR/drivers/oculus/resources/input/touch_profile.json -> "controller_type": "oculus_touch"
+            vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_ControllerType_String, "oculus_touch" );
+            vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_InputProfilePath_String, "{oculus}/input/touch_profile.json" );
+
+            if (device_flags & OHMD_DEVICE_FLAGS_LEFT_CONTROLLER) {
+                // steamapps/common/SteamVR/resources/rendermodels/oculus_cv1_controller_left
+                vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_RenderModelName_String, "oculus_cv1_controller_left");
+            } else if (device_flags & OHMD_DEVICE_FLAGS_RIGHT_CONTROLLER) {
+                // steamapps/common/SteamVR/resources/rendermodels/oculus_cv1_controller_right
+                vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_RenderModelName_String, "oculus_cv1_controller_right");
+            }
+        } else {
+            vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_ControllerType_String, "openhmd_controller" );
+            vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_InputProfilePath_String, "{openhmd}/input/openhmd_controller_profile.json" );
+            vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_RenderModelName_String, "vr_controller_vive_1_5");
+        }
+
 
         // return a constant that's not 0 (invalid) or 1 (reserved for Oculus)
         vr::VRProperties()->SetUint64Property( m_ulPropertyContainer, Prop_CurrentUniverseId_Uint64, 2 );
@@ -225,7 +249,6 @@ public:
 	   pose.vecPosition[2] = 0.15;
 	}
 
-        vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_InputProfilePath_String, "{openhmd}/input/openhmd_controller_profile.json" );
 
         int control_count;
         ohmd_device_geti(device, OHMD_CONTROL_COUNT, &control_count);
@@ -252,6 +275,8 @@ public:
           m_analogControls[i] = k_ulInvalidInputComponentHandle;
           m_touchControls[i] = k_ulInvalidInputComponentHandle;
 
+          // TODO: inputs match steamapps/common/SteamVR/drivers/oculus/resources/input/touch_profile.json
+          // but also support other controllers
           switch (controls_fn[i]) {
             case OHMD_GENERIC:
               control_map = "/input/generic/click";
@@ -266,10 +291,11 @@ public:
               control_map = "/input/grip/value";
               break;
             case OHMD_MENU:
-              control_map = "/input/menu/click";
+              control_map = "/input/system/click";
               break;
             case OHMD_HOME:
-              control_map = "/input/home/click";
+                // TODO: this button doesn't have an input in touch_profile.json
+              control_map = "/input/system/click";
               break;
             case OHMD_ANALOG_X:
               control_map = "/input/joystick/x";
@@ -377,11 +403,23 @@ public:
 
 	// DriverLog("get controller %d pose %f %f %f %f, %f %f %f\n", index, quat[0], quat[1], quat[2], quat[3], pos[0], pos[1], pos[2]);
 
-	pose.qWorldFromDriverRotation = identityquat;
-	pose.qDriverFromHeadRotation = identityquat;
-	pose.vecDriverFromHeadTranslation[0] = 0.f;
-	pose.vecDriverFromHeadTranslation[1] = 0.f;
-	pose.vecDriverFromHeadTranslation[2] = 0.f;
+	for (int i = 0; i < 3; i++) {
+		pose.vecDriverFromHeadTranslation[i] = 0.0;
+		pose.vecWorldFromDriverTranslation[i] = 0.0;
+	}
+
+	if (m_is_oculus) {
+		const HmdQuaternion_t oculusOffsetQ  = { 0.966, 0.259, 0, 0};
+
+		pose.qDriverFromHeadRotation = oculusOffsetQ;
+		pose.qWorldFromDriverRotation = identityquat;
+
+		pose.vecDriverFromHeadTranslation[2] = 0.08;
+	}
+	else {
+		pose.qDriverFromHeadRotation = identityquat;
+		pose.qWorldFromDriverRotation = identityquat;
+	}
 
 	return pose;
     }
@@ -505,15 +543,15 @@ public:
             buf << ohmd_list_gets(ctx, hmddisplay_idx, OHMD_PRODUCT);
             m_sModelNumber = buf.str();
         }
-        
+
         // Important to pass vendor through. Gaze cursor is only available for "Oculus". So grab the first word.
         char const* vendor_override = getenv("OHMD_VENDOR_OVERRIDE");
         if (vendor_override) {
             m_sVendor = vendor_override;
         } else {
-          m_sVendor = ohmd_list_gets(ctx, hmddisplay_idx, OHMD_VENDOR);
-          if (m_sVendor.find(' ') != std::string::npos) {
-            m_sVendor = m_sVendor.substr(0, m_sVendor.find(' '));
+            m_sVendor = ohmd_list_gets(ctx, hmddisplay_idx, OHMD_VENDOR);
+            if (m_sVendor.find(' ') != std::string::npos) {
+                m_sVendor = m_sVendor.substr(0, m_sVendor.find(' '));
             }
         }
 
@@ -604,7 +642,6 @@ public:
 
         vr::VRProperties()->SetStringProperty(m_ulPropertyContainer, Prop_ManufacturerName_String, m_sVendor.c_str());
         vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_ModelNumber_String, m_sModelNumber.c_str() );
-        vr::VRProperties()->SetStringProperty( m_ulPropertyContainer, Prop_RenderModelName_String, m_sModelNumber.c_str() );
         vr::VRProperties()->SetFloatProperty( m_ulPropertyContainer, Prop_UserIpdMeters_Float, m_flIPD );
         vr::VRProperties()->SetFloatProperty( m_ulPropertyContainer, Prop_UserHeadToEyeDepthMeters_Float, 0.f );
         vr::VRProperties()->SetFloatProperty( m_ulPropertyContainer, Prop_DisplayFrequency_Float, m_flDisplayFrequency );
@@ -1213,11 +1250,8 @@ void CServerDriver_OpenHMD::Cleanup()
     if (m_OpenHMDDeviceDriverControllerR)
       delete m_OpenHMDDeviceDriverControllerR;
 
-#if 0
-    // Disabled for now because the Rift camera thread sometimes hangs on shutdown...
     if (ctx)
         ohmd_ctx_destroy (ctx);
-#endif
 }
 
 
