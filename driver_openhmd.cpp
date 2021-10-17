@@ -40,6 +40,9 @@ ohmd_context* ctx;
 
 class COpenHMDDeviceDriverController;
 
+#undef near
+#undef far
+
 enum EyeRotation {
   EYE_ROTATION_UNKNOWN,
   EYE_ROTATION_NONE,
