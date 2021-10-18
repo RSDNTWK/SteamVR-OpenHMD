@@ -40,9 +40,6 @@ ohmd_context* ctx;
 
 class COpenHMDDeviceDriverController;
 
-#undef near
-#undef far
-
 enum EyeRotation {
   EYE_ROTATION_UNKNOWN,
   EYE_ROTATION_NONE,
@@ -50,6 +47,13 @@ enum EyeRotation {
   EYE_ROTATION_RIGHT,
   EYE_ROTATION_180,
 };
+
+#ifndef M_PI
+#define M_PI (3.14159265358979323846)
+#endif
+
+#undef near
+#undef far
 
 // gets float values from the device and prints them
 void print_infof(ohmd_device* hmd, const char* name, int len, ohmd_float_value val)
@@ -627,6 +631,14 @@ public:
           eye_rotation[1] = EYE_ROTATION_RIGHT;
           DriverLog("Force eye_rotation: Right for %s\n", prod);
           projection_matrix_rotated = false;
+        }
+       if (strcmp(prod, "Rift S") == 0) {
+          eye_rotation[0] = EYE_ROTATION_RIGHT;
+          eye_rotation[1] = EYE_ROTATION_RIGHT;
+          DriverLog("Force eye_rotation: Right for %s\n", prod);
+          projection_matrix_rotated = false;
+		  vr::VRProperties()->SetInt32Property(m_ulPropertyContainer, Prop_EdidVendorID_Int32, 0x3ed2);
+		  vr::VRProperties()->SetInt32Property(m_ulPropertyContainer, Prop_EdidProductID_Int32, 0x0012);
         }
 
         /* Sleep for 1 second while activating to let the display connect */
