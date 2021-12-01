@@ -633,12 +633,10 @@ public:
           projection_matrix_rotated = false;
         }
        if (strcmp(prod, "Rift S") == 0) {
-          eye_rotation[0] = EYE_ROTATION_RIGHT;
-          eye_rotation[1] = EYE_ROTATION_RIGHT;
+          eye_rotation[0] = EYE_ROTATION_LEFT;
+          eye_rotation[1] = EYE_ROTATION_LEFT;
           DriverLog("Force eye_rotation: Right for %s\n", prod);
           projection_matrix_rotated = false;
-		  vr::VRProperties()->SetInt32Property(m_ulPropertyContainer, Prop_EdidVendorID_Int32, 0x3ed2);
-		  vr::VRProperties()->SetInt32Property(m_ulPropertyContainer, Prop_EdidProductID_Int32, 0x0012);
         }
 
         /* Sleep for 1 second while activating to let the display connect */
