@@ -562,7 +562,7 @@ public:
             }
         }
 
-        m_nWindowX = 1920; //TODO: real window offset
+        m_nWindowX = 0; //TODO: real window offset
         m_nWindowY = 0;
         ohmd_device_geti(hmd, OHMD_SCREEN_HORIZONTAL_RESOLUTION,
                          &m_renderViewportWidth);
